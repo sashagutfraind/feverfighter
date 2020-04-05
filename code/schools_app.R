@@ -36,13 +36,11 @@
         textInput('cohort_sizes', label='Persons per cohort (persons, students, etc)', placeholder = '70,70,70,70,70,70', value = cat(params_def_elementary$cohort_sizes, sep = ',')),
         textInput('initial_school', label='Initially infected not isolated',       placeholder = '1,0,0,0,0,0', value = cat(params_def_elementary$initially_infected_school, sep = ',')),
         textInput('initial_home',   label='Initially infected isolated at home',   placeholder = '0,0,0,0,0,0', value = cat(params_def_elementary$initially_infected_home, sep = ',')),
-        #initial infected home / school
-        numericInput('vac_rate', label = 'Vaccination rate (0=none, 1=total)', min=0, max=1.0, step=0.01, value = params_def_elementary$vac_rate),
-        numericInput('vac_efficacy', label = 'Vaccination efficacy (0=none, 1=sterilizing)', min=0, max=1.0, step=0.01, value = params_def_elementary$vac_efficacy),
         selectInput("focal_symptom", "Symptom being monitored", c("Systemic (fever)" = "fever", "Respiratory (coughing)" = "cough", "Nasal (sneezing)" = "sneezing"), multiple = F, selected = 'fever'),
-        numericInput('symptom_propensity', label = 'Symptom propensity (fraction with symptoms)', min=0, max=1.0, step=0.05, value = params_def_elementary$symptom_propensity),
+        numericInput('symptom_propensity', label = 'Fraction with symptoms', min=0, max=1.0, step=0.05, value = params_def_elementary$symptom_propensity),
         h4('Policy for isolation'),
         numericInput('exclusion_days', label  = 'Home isolation after last symptom (days)', min=0, max=9, step=1, value = params_def_elementary$exclusion_days),
+        numericInput('workweek_days', label   = 'Workweek (days)', min=0, max=7, step=1, value = params_def_elementary$workweek_days),
         numericInput('compliance', label      = 'Policy compliance (0=none, 1=total)', min=0, max=1.0, step=0.01, value = params_def_elementary$compliance),
         numericInput('symptom_attention', label = 'Symptom attention (0=none, 1=total)', min=0, max=1.0, step=0.01, value = params_def_elementary$symptom_attention),
         dateRangeInput('wb_object', label='Winter Holiday Range', start = params_def_elementary$wb_start, end = params_def_elementary$wb_end, min = NULL, 
@@ -55,7 +53,9 @@
                        max = NULL, format = "yyyy-mm-dd", startview = "month", weekstart = 0,
                        language = "en", separator = " to ", width = NULL),
         
-        h4('Calibrate parameters'),
+        h4('Set or calibrate parameters'),
+        numericInput('vac_rate', label = 'Vaccination rate (0=none, 1=total)', min=0, max=1.0, step=0.01, value = params_def_elementary$vac_rate),
+        numericInput('vac_efficacy', label = 'Vaccination efficacy (0=none, 1=sterilizing)', min=0, max=1.0, step=0.01, value = params_def_elementary$vac_efficacy),
         numericInput('transmissibility', label = 'Transmissibility', min=0, max=10.0, step=0.001, value = params_def_elementary$transmissibility),
         numericInput('transmissibility_weekend_ratio', label = 'Relative transmissibility on weekends (0=no transmission, 1=unmodified)', min=0, max=2.0, step=0.05, value = params_def_elementary$transmissibility_weekend_ratio),
         numericInput('transmissibility_closure_ratio', label = 'Relative transmissibility holiday and closure (0=no transmission, 1=unmodified)', min=0, max=2.0, step=0.05, value = params_def_elementary$transmissibility_closure_ratio),
@@ -100,11 +100,17 @@
     new_params$transmissibility_weekend_ratio = input$transmissibility_weekend_ratio
     new_params$transmissibility_closure_ratio = input$transmissibility_closure_ratio
     new_params$focal_symptom      = input$focal_symptom
+    
+    if(input$focal_symptom != "fever" && input$symptoms_data == "coronavirus_symptoms.csv") {
+      showNotification("Focal symptom must be 'fever' for COVID-19", type="error")
+      return(NULL)
+    }
     new_params$symptom_propensity = input$symptom_propensity
     
     new_params$vac_rate         = input$vac_rate
     new_params$vac_efficacy     = input$vac_efficacy
     new_params$exclusion_days   = input$exclusion_days
+    new_params$workweek_days    = input$workweek_days
     new_params$compliance       = input$compliance
     new_params$symptom_attention  = input$symptom_attention
   
@@ -182,7 +188,6 @@
       ,error = function(e) {
         traceback(e)
         showNotification("Error with parameters values.  Update values or restart the app", type="error")
-        #output$messages <- renderText("Error with parameters values.  Update values or restart the app")
         return(NULL)
       }
     )
@@ -191,15 +196,37 @@
     }
 
     #TODO: ensure that there are no trailing empty columns in initial_infected_home
+    showNotification("Running ..", type="message")
+    
     outbreak_result <- compute_school_outbreak(params = new_params)
     
     return(outbreak_result)
   }
   
+  run_outbreak_show_results <- function(input, output, sessionData, session) {
+    if(! (sessionData$ui_ready)) {
+      return(NULL)
+    }
+    res <- tryCatch(run_outbreak(params = params_def_elementary, input=input, output=output)
+                    ,error = function(e) {
+                      traceback(e)
+                      showNotification("Error running the epidemic. Please review parameter values or restart the app", type="error")
+                      return(NULL)
+                    })
+    
+    if(!is.null(res)) {
+      sessionData$outbreakResult <- res
+      if(input$maintabs == 'Introduction') {
+        updateNavbarPage(session, inputId='maintabs', selected = 'Summary')
+      }
+    }
+  }
+  
   # Define server logic for random distribution app ----
   server <- function(input, output, session) {
     sessionData     <- reactiveValues()
-    
+    sessionData$ui_ready <- FALSE
+     
     output$finalResultsPlot <- renderPlot({
       if(is.null(sessionData$outbreakResult)) {return(NULL)}
       final_results <- summarize_epidemic_metrics(sessionData$outbreakResult)
@@ -299,29 +326,74 @@
     
     
     observeEvent(input$runButton, {
-      output$messages <- renderText('')
-      res <- tryCatch(run_outbreak(params = params_def_elementary, input=input, output=output)
-      ,error = function(e) {
-        traceback(e)
-        showNotification("Error running the epidemic. Please review parameter values or restart the app", type="error")
-        #output$messages <- renderText("Error with parameters values.  Update values or restart the app")
-        return(NULL)
-      })
-      
-      if(!is.null(res)) {
-        sessionData$outbreakResult <- res
-        if(input$maintabs == 'Introduction') {
-          updateNavbarPage(session, inputId='maintabs', selected = 'Summary')
-        }
-      }
+      sessionData$ui_ready <- TRUE #user must hit this once
+      run_outbreak_show_results(input, output, sessionData, session)
     })
+    observeEvent(input$vac_rate, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$vac_efficacy, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$focal_symptom, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$symptom_propensity, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$exclusion_days, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$workweek_days, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$compliance, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$symptom_attention, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$transmissibility, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    
+    
+    observeEvent(input$outbreak_dates, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$wb_object, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$sb_object, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$sv_object, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    
+    
+    observeEvent(input$transmissibility_weekend_ratio, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$seasonality, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    observeEvent(input$contacts_cross_grade, {
+      run_outbreak_show_results(input, output, sessionData, session)
+    })
+    
    
     observeEvent(input$loaded_parameters, {
+      sessionData$ui_ready <- FALSE #temporarily disable triggering on input change
+      
       inputs_file <- input$loaded_parameters$datapath
       savedInputs <- readRDS(inputs_file)
 
-      if(!is.null(savedInputs$fever_attention)) { #wishlist: removethis is to support old parameter names in old files
+      if(!is.null(savedInputs$fever_attention)) { #wishlist: remove this is to support old parameter names in old files
         savedInputs$symptom_attention = savedInputs$fever_attention
+      }
+      if(is.null(savedInputs$workweek_days)) { #wishlist: some calibrations don't have this parameter
+        savedInputs$workweek_days = 5
       }
       
       updateTextInput(session, inputId ="cohort_sizes", value=savedInputs$cohort_sizes)
@@ -332,6 +404,7 @@
       updateTextInput(session, inputId ="contacts_cross_grade", value=savedInputs$contacts_cross_grade)
       updateDateRangeInput(session, "outbreak_dates", start = savedInputs$outbreak_dates[1], end = savedInputs$outbreak_dates[2])
       updateTextInput(session, inputId ="exclusion_days", value=savedInputs$exclusion_days)
+      updateTextInput(session, inputId ="workweek_days", value=savedInputs$workweek_days)
       updateTextInput(session, inputId ="compliance", value=savedInputs$compliance)
       updateTextInput(session, inputId ="symptom_attention", value=savedInputs$symptom_attention)
       updateDateRangeInput(session, "wb_object", start = savedInputs$wb_object[1], end = savedInputs$wb_object[2])
@@ -344,6 +417,8 @@
       
       updateSelectInput(session, inputId="calibration_dataset_name", selected=savedInputs$calibration_dataset_name)
       updateSelectInput(session, inputId="symptoms_data", selected=savedInputs$symptoms_data)
+      
+      #sessionData$ui_ready <- TRUE, #this cannot be done, sadly, since the above observer events will be triggered after this function ends
     }) 
     
     output$save_inputs <- downloadHandler(

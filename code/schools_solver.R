@@ -85,6 +85,7 @@ params_outbreak_partial <- list(
   sv_start   = ymd("2020-06-19"),
   sv_end     = ymd("2020-09-02"),
   exclusion_days    = 1,
+  workweek_days     = 5,
   symptom_attention = 0.3,   
   compliance        = 0.5,
   vac_rate          = 0.4,  #fraction of children vaccinated
@@ -282,13 +283,14 @@ compute_school_helper <- function(current_day, state, parameters, infection_sten
   #represents heighted contact rates in the winter - peakes on Jan 1 and declines on either side of Jan 1
   seasonality_multiplier <- 1 + parameters$seasonality*cos(2*pi*yday(chron(current_day))/365)  
   base_transmissibility <- parameters$transmissibility*seasonality_multiplier
-  
-  transmissibility <-       ifelse(is.holiday(current_day,
+ 
+  weekday_counting_from_monday <- unclass(weekdays(current_day-1))
+  transmissibility <- ifelse(is.holiday(current_day,
                                               c(seq.dates(as.numeric(parameters$wb_start), as.numeric(parameters$wb_end)), 
                                                 seq.dates(as.numeric(parameters$sb_start), as.numeric(parameters$sb_end)),
                                                 seq.dates(as.numeric(parameters$sv_start), as.numeric(parameters$sv_end)))),
                                    parameters$transmissibility_closure_ratio*base_transmissibility, 
-                                   ifelse(is.weekend(current_day), 
+                                   ifelse(weekday_counting_from_monday > parameters$workweek_days, 
                                           parameters$transmissibility_weekend_ratio*base_transmissibility,
                                           base_transmissibility)
                                    )
