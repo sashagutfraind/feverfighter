@@ -28,7 +28,7 @@ if(Sys.info()['effective_user'] == 'agutf') {
 } else if (Sys.info()['effective_user'] == 'adam') {
   setwd("/home/adam/projects/schools-flu/code")
 } else if (Sys.info()['effective_user'] == 'Adam') {
-  setwd("C:\\Users\\Adam\\Projects\\schools-flu\\code")
+  setwd("C:\\Users\\Adam\\Documents\\schools-flu\\code")
 }
 if(!file.exists("output")) {
   dir.create("output")
@@ -95,7 +95,7 @@ params_outbreak_partial <- list(
   transmissibility_weekend_ratio = 0.1,  #reduction during weekends.  TODO: check literature
   transmissibility_closure_ratio = 0.1,
   focal_symptom = 'fever',
-  symptom_propensity   = 0.88 
+  symptom_propensity   = 0.84
 )
 
 
@@ -406,7 +406,7 @@ effective_return_rates <- function(params) {
                           (params$symptom_attention + (1-params$symptom_attention)*params$compliance)
   
   if(params$exclusion_days>length(params$symptom_rates)) {
-    stop('Invalid number of excluded days')
+    stop('Invalid number of excluded days - exceeds duration of symptoms')
   }
   temp_max <- rep(0, length(params$symptom_rates))
   for (day in 1:params$exclusion_days) {
@@ -417,9 +417,7 @@ effective_return_rates <- function(params) {
 }
 
 #' @desc Calculate the effective return rates for different policies
-effective_return_rates_table <- function(symptom_rates, symptom_propensity=0.88, symptom_attention=0.832331) {
-  
-  
+effective_return_rates_table <- function(symptom_rates, symptom_propensity=0.84, symptom_attention=0.832331) {
   #' @params params$symptom_rates the underlying rate of the focal symptom
   #' @params params$compliance     fraction of kids not allowed to return
   #' @params params$exclusion_days     number of days blocked
@@ -607,8 +605,8 @@ plot_calibration <- function(outdf, calibdf=boarding_time_series) {
   df_long <- data.table::melt(df, id="date") # convert to long format
   d_long <- data.table::melt(calib_df, id="date")
   pl<-ggplot() +
-    geom_line(data=d_long, aes(x=date, y=value, linetype=variable, color=variable), geom=c("point", "path")) +
-    geom_line(data=df_long, aes(x=date, y=value, linetype=variable, color=variable), geom=c("point", "path")) +
+    geom_line(data=d_long, size=1.5, aes(x=date, y=value, linetype=variable, color=variable), geom=c("point", "path")) +
+    geom_line(data=df_long, size=1.5, aes(x=date, y=value, linetype=variable, color=variable), geom=c("point", "path")) +
     xlab("Individuals") +
     xlab("") +
     ylab(ylab) + 
@@ -666,13 +664,13 @@ summarize_epidemic_metrics <- function(prediction) {
   final_metrics$vaccinated  <- as.integer(head(prediction$VS,1) + head(prediction$VR,1))
   final_metrics$persondays_isolated   <- as.integer(sum(prediction$InfectedIsolated))
   final_metrics$persondays_unisolated <- as.integer(sum(prediction$InfectedUnisolated))
-  final_metrics$peak_new_ILI_cases <- as.integer(max(prediction$New_ILI))
-  final_metrics$peak_new_absent <- as.integer(max(prediction$New_absent))
+  final_metrics$peak_New_ILI_cases <- as.integer(max(prediction$New_ILI))
+  final_metrics$peak_New_absent <- as.integer(max(prediction$New_absent))
   final_metrics$peak_infected <- as.integer(max(prediction$Infected))
-  
   final_metrics$attack_rate <- (tail(prediction$R,1) + tail(prediction$Infected,1))/final_metrics$total_students
-  final_metrics$peak_date_new_ILI    <- strftime(prediction[which.max(prediction$New_ILI),"dates"], tz='GMT')
-  final_metrics$peak_date_new_absent <- strftime(prediction[which.max(prediction$New_absent),"dates"], tz='GMT')
+  final_metrics$start_date <- prediction$dates[min(which(prediction$Infected >= 1))]
+  final_metrics$peak_date_New_ILI    <- strftime(prediction[which.max(prediction$New_ILI),"dates"], tz='GMT')
+  final_metrics$peak_date_New_absent <- strftime(prediction[which.max(prediction$New_absent),"dates"], tz='GMT')
   final_metrics$peak_date_infected   <- strftime(prediction[which.max(prediction$Infected),"dates"], tz='GMT')
   
   
@@ -680,8 +678,26 @@ summarize_epidemic_metrics <- function(prediction) {
   if(sum(prediction$Infected >= 2) > 0) {
     peak_outbreak_times <- which(prediction$Infected >= 2)
     final_metrics$peak_duration <- as.integer(max(peak_outbreak_times) - min(peak_outbreak_times) + 1)
+    final_metrics$peak_last_day <- strftime(prediction$dates[max(peak_outbreak_times)], tz='GMT')
   } else {
     final_metrics$peak_duration <- 0
+    final_metrics$peak_last_day <- strftime(prediction$dates[1], tz='GMT') #wishlist: perhaps use last day of outbreak or NA?
+  }
+  if(sum(prediction$New_ILI >= 2) > 0) {
+    peak_New_ILI_times <- which(prediction$New_ILI >= 2)
+    final_metrics$peak_New_ILI_duration <- as.integer(max(peak_New_ILI_times) - min(peak_New_ILI_times) + 1)
+    final_metrics$peak_New_ILI_last_day <- strftime(prediction$dates[max(peak_New_ILI_times)], tz='GMT')
+  } else {
+    final_metrics$peak_New_ILI_duration <- 0
+    final_metrics$peak_New_ILI_last_day <- strftime(prediction$dates[1], tz='GMT') #wishlist: perhaps use last day of outbreak or NA?
+  }
+  if(sum(prediction$New_absent >= 2) > 0) {
+    peak_New_absent_times <- which(prediction$New_absent >= 2)
+    final_metrics$peak_New_absent_duration <- as.integer(max(peak_New_absent_times) - min(peak_New_absent_times) + 1)
+    final_metrics$peak_New_absent_last_day <- strftime(prediction$dates[max(peak_New_absent_times)], tz='GMT')
+  } else {
+    final_metrics$peak_New_absent_duration <- 0
+    final_metrics$peak_New_absent_last_day <- strftime(prediction$dates[1], tz='GMT') #wishlist: perhaps use last day of outbreak or NA?
   }
   
   return(final_metrics)
@@ -692,29 +708,32 @@ summarize_epidemic_metrics <- function(prediction) {
 # there are 7 grades of sizes: 42, 60, 60, 49, 45, 45, 45, 45
 calibration_outbreak_results_thames <- list(
   infected    = 264,
-  attack_rate = 0.675,
-  peak_new_absent = 38,
-  peak_date_absent   = as.Date('2012-12-06'),  #absenteeism data after weekend depile
-  #peak_date_absent   = as.Date('2012-12-10'),  #absenteeism data
-  peak_duration   = 30 #Fig. 1: 11/26/2012 - 3 days (probably started on Friday) through 12/21/2012 + 3 days (Fig 1 shows first absence).
+  attack_rate        = 0.675,
+  peak_New_absent    = 38,
+  peak_date_New_absent   = as.Date('2012-12-06'),  #absenteeism data after weekend depile
+  #peak_date_New_absent  = as.Date('2012-12-10'),  #absenteeism data
+  peak_New_absent_duration  = 30, #Fig. 1: 11/26/2012 - 3 days (probably started on Friday) through 12/21/2012 + 3 days (Fig 1 shows first absence).
+  peak_New_absent_last_day  = as.Date('2012-12-23')
 )
 
 #wishlist: gently review this - is the peak corresponding to ILI or actual infections?
 calibration_outbreak_results_pennsylvania <- list(
   infected           = 109.4,
   attack_rate        = 109.4/456,
-  peak_new_ILI_cases = 14.12,
-  #peak_date_new_ILI          = as.Date('2009-05-11'), #this is the real peak date
-  peak_date_new_ILI          = as.Date('2009-05-10'),
-  peak_duration      = 12 #Fig. 2: 5/5/2009 through 5/16/2009.  this corresponds to peak ILI, not necessarily peak infected
+  peak_New_ILI_cases = 14.12,
+  #peak_date_New_ILI     = as.Date('2009-05-11'), #this is the real peak date (wishlist: clarify - due to censoring?)
+  peak_date_New_ILI     = as.Date('2009-05-10'),
+  peak_New_ILI_duration = 12, #Fig. 2: 5/5/2009 through 5/16/2009.  this corresponds to peak ILI, not necessarily peak infected
+  peak_New_ILI_last_day = as.Date('2009-05-26')
 )
 
 calibration_outbreak_results_boarding <- list(
   infected           = 101,
   attack_rate        = 101/1307,
   peak_new_ILI_cases = 10,
-  peak_date_new_ILI          = as.Date('2009-05-25'),
-  peak_duration      = 19#Fig. 1: 5/9/2009 through 5/31/2009.  this corresponds to peak ILI, not necessarily peak infected
+  peak_date_New_ILI     = as.Date('2009-05-27'),
+  peak_New_ILI_duration = 19, #Fig. 1: 5/9/2009 through 5/31/2009.  this corresponds to peak ILI, not necessarily peak infected
+  peak_New_ILI_last_day = as.Date('2009-05-29')
 )
 
 get_calibration_dataset_results <- function(dataset_name) {
@@ -755,25 +774,6 @@ calibration_difference <- function(new_params    = list(),
   final_metrics     <- summarize_epidemic_metrics(outbreak_result)
   result_difference <- calibration_result_difference(calibration_outbreak, final_metrics)
   
-  final_list = c(final_metrics$infected,
-                    final_metrics$peak_new_ILI_cases,
-                    #final_metrics$peak_new_absent,
-                    final_metrics$attack_rate,
-                    as.Date(final_metrics$peak_date_new_ILI),
-                    #as.Date(final_metrics$peak_date_absent),
-                    final_metrics$peak_duration
-                    )
-  calib_list = c(calibration_outbreak$infected,
-                    calibration_outbreak$peak_new_ILI_cases,
-                    #calibration_outbreak$peak_new_absent,
-                    calibration_outbreak$attack_rate,
-                    as.Date(calibration_outbreak$peak_date_new_ILI),
-                    #as.Date(calibration_outbreak$peak_date_absent),
-                    calibration_outbreak$peak_duration
-                    )
-  
-
-  
   #print('Final')
   #print(final_list)
   #print('Calib')
@@ -783,13 +783,34 @@ calibration_difference <- function(new_params    = list(),
 
 calibration_result_difference <- function(calibration_outbreak, final_metrics) {
   #wishlist: allow weight parameters instead of hardcoding
+  if (!is.null(calibration_outbreak$peak_date_New_ILI)) {
+    peak_date_model <- as.integer(as.Date(final_metrics$peak_date_New_ILI))
+    peak_date_real  <- as.integer(as.Date(calibration_outbreak$peak_date_New_ILI))
+    peak_duration_model <- final_metrics$peak_New_ILI_duration
+    peak_duration_real  <- calibration_outbreak$peak_New_ILI_duration
+    peak_last_day_model <- as.integer(as.Date(final_metrics$peak_New_ILI_last_day))
+    peak_last_day_real  <- as.integer(as.Date(calibration_outbreak$peak_New_ILI_last_day))
+    peak_cases_model <- final_metrics$peak_New_ILI_cases
+    peak_cases_real  <- calibration_outbreak$peak_new_ILI_cases
+  } else if (!is.null(calibration_outbreak$peak_date_New_absent)) {
+    peak_date_model <- as.integer(as.Date(final_metrics$peak_date_New_absent))
+    peak_date_real  <- as.integer(as.Date(calibration_outbreak$peak_date_New_absent))
+    peak_duration_model <- final_metrics$peak_New_absent_duration
+    peak_duration_real  <- calibration_outbreak$peak_New_absent_duration
+    peak_last_day_model <- as.integer(as.Date(final_metrics$peak_New_absent_last_day))
+    peak_last_day_real  <- as.integer(as.Date(calibration_outbreak$peak_New_absent_last_day))
+    peak_cases_model <- final_metrics$peak_new_absent
+    peak_cases_real  <- calibration_outbreak$peak_new_absent
+  } else {
+    stop('missing data on peak')
+  }
+  
   ret <- sqrt(
-         0.5*(final_metrics$infected                      - calibration_outbreak$infected)**2 
-    +    3.0*(final_metrics$peak_new_ILI_cases            - calibration_outbreak$peak_new_ILI_cases)**2 
-    #+    3.0*(final_metrics$peak_new_absent            - calibration_outbreak$peak_new_absent)**2 
-    +    5.0*(as.integer(as.Date(final_metrics$peak_date_new_ILI) - as.Date(calibration_outbreak$peak_date_new_ILI)))**2 
-    #   +    5.0*(as.integer(as.Date(final_metrics$peak_date_absent) - as.Date(calibration_outbreak$peak_date_absent)))**2 
-    +    0.5*(final_metrics$peak_duration                 - calibration_outbreak$peak_duration)**2)
+      ((final_metrics$infected - calibration_outbreak$infected)/(final_metrics$infected + calibration_outbreak$infected))**2
+    + ((peak_cases_model    - peak_cases_real)/(peak_cases_model + peak_cases_real))**2
+    + ((peak_date_model     - peak_date_real)/7.0)**2      #using weeks hence /7.0
+    + ((peak_last_day_model - peak_last_day_real)/7.0)**2  #using weeks hence /7.0
+    + ((peak_duration_model - peak_duration_real)/(peak_duration_model + peak_duration_real))**2)
   return(ret)
 }
 
@@ -826,9 +847,9 @@ update_off_diagonal_values <- function(contact_data, off_diagonal_vals) {
 # outbreak_result<-compute_school_outbreak(params = new_params)
 #initial in each grade = susceptible + infected + vaccinated; the eqn is true for all times during the outbreak
 
-#Table T1
-#covid_rates_table=effective_return_rates_table(coronavirus_symptoms$SystemicSymptoms)
-#flu_rates_table=effective_return_rates_table(influenza_symptoms$SystemicSymptoms)
+#Table for the appendix
+# flu_rates_table=effective_return_rates_table(influenza_symptoms$SystemicSymptoms, symptom_propensity = 0.84)
+# covid_rates_table=effective_return_rates_table(coronavirus_symptoms$SystemicSymptoms, symptom_propensity = 0.1809)
 
 # figure F1
 # outdf <- compute_school_outbreak_alt(params = params_def_elementary, doplot=FALSE)

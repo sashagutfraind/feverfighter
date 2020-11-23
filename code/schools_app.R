@@ -16,7 +16,7 @@
   # Define UI for the app ----
   ui <- fluidPage(
     titlePanel("FeverFighter - the outbreak predictor and policy analyzer"),
-    tags$head(includeScript('google_analytics.js')),
+    tags$head(includeHTML(("google_analytics.js"))),
     
     # Sidebar layout with input and output definitions ----
     sidebarLayout(
@@ -410,6 +410,8 @@
       updateDateRangeInput(session, "wb_object", start = savedInputs$wb_object[1], end = savedInputs$wb_object[2])
       updateDateRangeInput(session, "sb_object", start = savedInputs$sb_object[1], end = savedInputs$sb_object[2])
       updateDateRangeInput(session, "sv_object", start = savedInputs$sv_object[1], end = savedInputs$sv_object[2])
+      updateTextInput(session, inputId ="symptom_propensity", value=savedInputs$symptom_propensity)
+      updateSelectInput(session, inputId ="focal_symptom", selected=savedInputs$focal_symptom)
       updateTextInput(session, inputId ="transmissibility", value=savedInputs$transmissibility)
       updateTextInput(session, inputId ="transmissibility_weekend_ratio", value=savedInputs$transmissibility_weekend_ratio)
       updateTextInput(session, inputId ="transmissibility_closure_ratio", value=savedInputs$transmissibility_closure_ratio)
